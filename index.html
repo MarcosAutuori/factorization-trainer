@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autuori - Factorization Game</title>
+    <style>
+        :root {
+            --bg-color: #f0f2f5;
+            --primary: #2563eb;
+            --success: #22c55e;
+            --secondary: #64748b;
+            --text: #1e293b;
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-color); color: var(--text); display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .container { display: flex; gap: 30px; max-width: 1000px; }
+        
+        /* Grade 4x8 */
+        .grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; }
+        .btn { width: 80px; height: 80px; border: none; border-radius: 8px; cursor: pointer; font-size: 20px; font-weight: bold; transition: all 0.2s; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        .btn.selected { background: var(--primary); color: white; }
+        .btn.solved { background: var(--success); color: white; cursor: default; }
+        .btn.unsolved { color: var(--primary); border: 2px solid var(--primary); }
+
+        /* Teclado e Painel Lateral */
+        .sidebar { width: 250px; display: flex; flex-direction: column; gap: 15px; }
+        .panel { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .keyboard { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .kb-btn { padding: 15px; border: none; border-radius: 6px; background: var(--secondary); color: white; cursor: pointer; font-size: 18px; }
+        .kb-btn:active { background: var(--text); }
+        .reset-btn { width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 6px; background: #ef4444; color: white; font-weight: bold; cursor: pointer; }
+        
+        .status { font-weight: bold; min-height: 50px; color: var(--primary); }
+        .score { font-size: 24px; font-weight: bold; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>🎮 Interactive Factorization v1.5 EN</h1>
+    <p><strong>Developed by Marcos Autuori</strong></p>
+</div>
+
+<div class="container">
+    <div class="grid" id="gameGrid"></div>
+
+    <div class="sidebar">
+        <div class="panel">
+            <div class="score">Time: <span id="timeLabel">200</span>s</div>
+        </div>
+        <div class="panel">
+            <div class="status" id="statusLabel">Select a target number...</div>
+        </div>
+        <div class="panel">
+            <div class="keyboard" id="keyboard"></div>
+            <button class="reset-btn" onclick="initGame()">Restart Game</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const GRID_NUMBERS = [10, 12, 14, 15, 16, 18, 20, 21, 24, 25, 27, 28, 30, 32, 35, 36, 40, 42, 45, 48, 50, 54, 56, 60, 63, 64, 70, 72, 80, 81, 90, 100];
+    const KEYBOARD_KEYS = [2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let timeLeft = 200;
+    let selectedIdx = null;
+    let selectedFactors = [];
+    let solvedCount = 0;
+    let timer = null;
+    let isGameOver = false;
+
+    // Sons (espera que os arquivos estejam na pasta /pygame_sounds)
+    const sounds = {
+        click: new Audio('pygame_sounds/click.wav'),
+        correct: new Audio('pygame_sounds/correct.wav'),
+        wrong: new Audio('pygame_sounds/wrong.wav'),
+        complete: new Audio('pygame_sounds/complete.wav')
+    };
+
+    function play(key) {
+        sounds[key].currentTime = 0;
+        sounds[key].play().catch(() => console.log("Audio waiting for user interaction"));
+    }
+
+    function initGame() {
+        clearInterval(timer);
+        timeLeft = 150;
+        selectedIdx = null;
+        selectedFactors = [];
+        solvedCount = 0;
+        isGameOver = false;
+        
+        document.getElementById('timeLabel').innerText = timeLeft;
+        document.getElementById('statusLabel').innerText = "Select a target number...";
+        
+        // Criar Grade
+        const gridEl = document.getElementById('gameGrid');
+        gridEl.innerHTML = '';
+        GRID_NUMBERS.forEach((num, i) => {
+            const btn = document.createElement('button');
+            btn.className = 'btn unsolved';
+            btn.innerText = num;
+            btn.id = `target-${i}`;
+            btn.onclick = () => selectTarget(i);
+            gridEl.appendChild(btn);
+        });
+
+        // Criar Teclado
+        const kbEl = document.getElementById('keyboard');
+        kbEl.innerHTML = '';
+        KEYBOARD_KEYS.forEach(num => {
+            const btn = document.createElement('button');
+            btn.className = 'kb-btn';
+            btn.innerText = num;
+            btn.onclick = () => selectFactor(num);
+            kbEl.appendChild(btn);
+        });
+
+        timer = setInterval(() => {
+            if(timeLeft > 0 && !isGameOver) {
+                timeLeft--;
+                document.getElementById('timeLabel').innerText = timeLeft;
+            } else if (timeLeft <= 0) {
+                endGame(false);
+            }
+        }, 1000);
+    }
+
+    function selectTarget(idx) {
+        if (isGameOver || document.getElementById(`target-${idx}`).classList.contains('solved')) return;
+        
+        play('click');
+        if (selectedIdx !== null) document.getElementById(`target-${selectedIdx}`).classList.remove('selected');
+        
+        selectedIdx = idx;
+        selectedFactors = [];
+        document.getElementById(`target-${idx}`).classList.add('selected');
+        document.getElementById('statusLabel').innerText = `Factoring: ${GRID_NUMBERS[idx]}`;
+    }
+
+    function selectFactor(num) {
+        if (isGameOver || selectedIdx === null) {
+            if (selectedIdx === null) play('wrong');
+            return;
+        }
+
+        play('click');
+        selectedFactors.push(num);
+        document.getElementById('statusLabel').innerText = `Factors: ${selectedFactors.join(' x ')}`;
+
+        if (selectedFactors.length === 2) {
+            const target = GRID_NUMBERS[selectedIdx];
+            if (selectedFactors[0] * selectedFactors[1] === target) {
+                // Acerto
+                play('correct');
+                const btn = document.getElementById(`target-${selectedIdx}`);
+                btn.classList.remove('selected', 'unsolved');
+                btn.classList.add('solved');
+                btn.innerText = `✅ ${target}`;
+                solvedCount++;
+                selectedIdx = null;
+                selectedFactors = [];
+                document.getElementById('statusLabel').innerText = "Correct!";
+                
+                if (solvedCount === GRID_NUMBERS.length) endGame(true);
+            } else {
+                // Erro
+                play('wrong');
+                document.getElementById('statusLabel').innerText = `Wrong! ${selectedFactors[0]}x${selectedFactors[1]} = ${selectedFactors[0]*selectedFactors[1]}`;
+                selectedFactors = [];
+            }
+        }
+    }
+
+    function endGame(win) {
+        isGameOver = true;
+        clearInterval(timer);
+        if (win) {
+            play('complete');
+            document.getElementById('statusLabel').innerText = "🏆 VICTORY! ALL SOLVED!";
+        } else {
+            document.getElementById('statusLabel').innerText = "⌛ TIME IS UP!";
+        }
+    }
+
+    // Iniciar
+    window.onload = initGame;
+</script>
+
+</body>
+</html>
